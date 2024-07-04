@@ -1,6 +1,14 @@
-# 一台服务器构建mysql主从复制
+# 一台服务器(虚拟机)构建Mysql主从复制
 
-基于mysql8构建主从,
+## 准备前提
+
++ 一台服务器 / 虚拟机
++ 安装docker环境
++ 防火墙开放对外端口号`33061`和`33062`(一主一从,多主多从,开放多个)
+
+## 构建主从复制
+
+基于mysql8镜像,创建主从库`mysql8_master`和`mysql8_slave`
 
 ```bash
 [root@lavm-googc8m29h slave]# docker ps
@@ -9,9 +17,9 @@ ebe768e56fbf   mysql          "docker-entrypoint.s…"   About a minute ago   Up
 cf052c62a815   mysql          "docker-entrypoint.s…"   About a minute ago   Up About a minute   33060/tcp, 0.0.0.0:33061->3306/tcp, :::33061->3306/tcp   mysql8_master
 ```
 
-主机mysql port: 33061
+### 构建主库
 
-从机mysql port: 33062
+#### 创建docker容器和远程访问用户
 
 ```bash
 # 创建主机mysql挂载目录
@@ -32,38 +40,27 @@ docker run --name mysql8_master -p 33061:3306 \
 docker exec -it mysql8_master bash
 # 登录mysql
 mysql -u root -p
-# 修改加密规则（可以直接复制）
+
+# 修改加密规则
 ALTER USER 'root'@'%' IDENTIFIED WITH mysql_native_password BY 'root';
-# 刷新权限（可以直接复制）
-FLUSH PRIVILEGES;
 
+# 添加远程登录用户
+create user 'pd_slave'@'%' identified by '123456';
+# 修改加密规则
+ALTER USER 'pd_slave'@'%' IDENTIFIED WITH mysql_native_password BY 'pd_slave';
+# 授予该用户对所有数据库的所有权限
+GRANT ALL PRIVILEGES ON *.* TO 'pd_slave'@'%';
 
-# 创建从机mysql挂载目录
-sudo mkdir -p /usr/local/mysql8
-sudo mkdir -p /usr/local/mysql8/slave/conf
-sudo mkdir -p /usr/local/mysql8/slave/data
-# 创建从机自定义配置文件myconf.cnf
-cd /usr/local/mysql8/slave
-chmod 777 conf
-cd conf
-touch myconf.cnf 
-# 创建容器 映射33061目录,挂载自定义配置文件和数据,初始化root用户密码
-docker run --name mysql8_slave -p 33061:3306 \
--v /usr/local/mysql8/slave/conf:/etc/mysql/conf.d \
--v /usr/local/mysql8/slave/data:/var/lib/mysql \
--e MYSQL_ROOT_PASSWORD=root -d mysql
-
-# 进入容器
-docker exec -it mysql8_slave bash
-# 登录mysql
-mysql -u root -p
-# 修改加密规则（可以直接复制）
-ALTER USER 'root'@'%' IDENTIFIED WITH mysql_native_password BY 'root';
 # 刷新权限（可以直接复制）
 FLUSH PRIVILEGES;
 ```
 
-修改主mysql配置文件,`conf\my.cnf`,写入一下参数
+> + `Authentication plugin 'caching_sha2_password' cannot be loaded` : 修改mysql8的加密规则,能够通过Navicat远程连接数据库
+> + `create user 'pd_slave'@'%' identified by '123456';` 创建`pd_slave`用户,使得后续从库通过远程用户获取`binary_log`
+
+#### 配置文件
+
+修改主mysql配置文件,`conf\my.cnf`,写入以下参数
 
 ```bash
 [mysqld]
@@ -80,32 +77,22 @@ binlog_format=STATEMENT
 # bin-ignore-db=information_schema
 ```
 
-binlog_format:
++ `binlog_format` : 日志格式
+  + `binlog_format=STATEMENT`:日志记录的是主机数据库的写指令,性能高,但是now()之类的函数以及获取系统参数的操作会出现主从数据不同步的问题.
+  + `binlog_format=ROW(默认)`:日志记录的是主机数据库的写后的数据,批量操作时性能交叉,解决now()或者user()或者@@hostname等操作在主从机器上不一致的问题
+  + `binlog_format=MIXED`: 是以上两种level的混合使用,有函数用ROW,没函数用STATEMENT,但是无法识别系统变量
 
-+ `binlog_format=STATEMENT`:日志记录的是主机数据库的写指令,性能高,但是now()之类的函数以及获取系统参数的操作会出现主从数据不同步的问题.
-+ `binlog_format=ROW(默认)`:日志记录的是主机数据库的写后的数据,批量操作时性能交叉,解决now()或者user()或者@@hostname等操作在主从机器上不一致的问题
-+ `binlog_format=MIXED`: 是以上两种level的混合使用,有函数用ROW,没函数用STATEMENT,但是无法识别系统变量
-
-重启主机mysql.
-
-
-
-主机mysql创建`pd_slave`用户
+#### 重启主机mysql.
 
 ```bash
-# 添加远程登录用户jiyuan,密码jiyuan4zhong
-create user 'pd_slave'@'%' identified by '12345';
-
-# 授予该用户对所有数据库的所有权限
-GRANT ALL PRIVILEGES ON *.* TO 'pd_slave'@'%';
-
-# 刷新权限 
-FLUSH PRIVILEGES;
+docker restart mysql8_master
 ```
 
-主机查询master状态
+#### 查看主机状态
 
-执行完此步骤后不要再操作主服务器mysql,防止主服务器状态值变化
+主机查询master状态,执行完此步骤后不要再操作主服务器mysql,防止主服务器状态值变化.
+
+> 从机需要根据master的`file`和`position`,
 
 ```bash
 mysql> show master status;
@@ -117,11 +104,38 @@ mysql> show master status;
 1 row in set (0.01 sec)
 ```
 
-记住File和Position的值. 执行完此步骤后,不要在操作主服务器mysql,防止主服务器状态值发生变化[file和position后续配置从服务器使用]
+### 构建从库
 
+#### 创建docker容器
 
+```bash
+# 创建主机mysql挂载目录
+sudo mkdir -p /usr/local/mysql8
+sudo mkdir -p /usr/local/mysql8/slave/conf
+sudo mkdir -p /usr/local/mysql8/slave/data
+# 创建主机自定义配置文件myconf.cnf
+cd /usr/local/mysql8/slave
+chmod 777 conf
+cd conf
+touch myconf.cnf 
+# 创建容器 映射33061目录,挂载自定义配置文件和数据,初始化root用户密码
+docker run --name mysql8_slave -p 33061:3306 \
+-v /usr/local/mysql8/slave/conf:/etc/mysql/conf.d \
+-v /usr/local/mysql8/slave/data:/var/lib/mysql \
+-e MYSQL_ROOT_PASSWORD=root -d mysql
+# 进入容器
+docker exec -it mysql8_slave bash
+# 登录mysql
+mysql -u root -p
 
-配置从服务器
+# 修改加密规则
+ALTER USER 'root'@'%' IDENTIFIED WITH mysql_native_password BY 'root';
+
+# 刷新权限（可以直接复制）
+FLUSH PRIVILEGES;
+```
+
+#### 配置文件
 
 修改`conf\my.cnf`
 
@@ -133,25 +147,41 @@ server-id=2
 # relay-log=relay-bin
 ```
 
-> 如果有其他从机
->
-> ```bash
-> [mysqld]
-> # 服务器唯一id,每台服务器的id必须不同,如果配置其他从机,注意修改id
-> server-id=3
-> # 中继日志名,默认xxxxxxxxxx-relay-bin
-> # relay-log=relay-bin
-> ```
->
-> 重启从服务器
+如果存在其他从机
 
+```bash
+[mysqld]
+# 服务器唯一id,每台服务器的id必须不同,如果配置其他从机,注意修改id
+server-id=3
+# 中继日志名,默认xxxxxxxxxx-relay-bin
+# relay-log=relay-bin
+```
 
+#### 重启从库
 
-在从机上配置主从关系
+```bash
+docker restart mysql8_slave
+```
 
-slave1,salve2
+#### 配置主从关系
 
-在从机上执行以下sql操作,用到主机之前记录好的file和position(通过在主机执行`show master status` 查看配置)
+在从库上执行,
+
+获取主库的file和position
+
+```bash
+mysql> show master status;
++---------------+----------+--------------+------------------+-------------------+
+| File          | Position | Binlog_Do_DB | Binlog_Ignore_DB | Executed_Gtid_Set |
++---------------+----------+--------------+------------------+-------------------+
+| binlog.000004 |      860 |              |                  |                   |
++---------------+----------+--------------+------------------+-------------------+
+1 row in set (0.01 sec)
+```
+
+执行以下命令
+
+`CHANGE MASTER TO MASTER_HOST='117.72.32.111',MASTER_USER='pd_slave',MASTER_PASSWORD='123456',MASTER_PORT=33061,MASTER_LOG_FILE='{file}',MASTER_LOG_POS={position};`  替换为自己的`file`和`position`
 
 ```bash
 root@ebe768e56fbf:/# mysql -u root -p
@@ -173,35 +203,17 @@ Query OK, 0 rows affected, 9 warnings (0.10 sec)
 
 ```
 
-+ 设置主机地址
++ 设置主机地址:   `CHANGE MASTER TO MASTER_HOST='117.72.32.111'`
++ 设置主机访问用户账号: `MASTER_USER='pd_slave'`
 
-CHANGE MASTER TO MASTER_HOST='117.72.32.111'
++ 设置主机访问用户密码: `MASTER_PASSWORD='123456'`
 
-+ 设置主机访问用户账号
++ 设置主机端口号: `MASTER_PORT=33061`
 
-MASTER_USER='pd_slave'
++ 设置主机binlog: `MASTER_LOG_FILE='binlog.000004'`
++ 设置主机position: `MASTER_LOG_POS=860`
 
-+ 设置主机访问用户密码
-
-MASTER_PASSWORD='123456'
-
-+ 设置主机端口号
-
-MASTER_PORT=33061
-
-+ 设置主机binlog
-
-MASTER_LOG_FILE='binlog.000004'
-
-+ 设置主机position
-
-MASTER_LOG_POS=860
-
-
-
-从服务器启动主从同步:
-
-启动从机的复制功能,执行sql
+#### 启动从机的主从复制
 
 ```bash
 # 启动主从同步
@@ -280,21 +292,22 @@ mysql>
 
 ```
 
-> 两个关键进程: 下面两个参数都是Yes,则说明主从配置成功!
->
-> Slave_IO_Running: Yes
->
-> Slave_SQL_Running: Yes
+两个关键进程: 下面两个参数都是Yes,则说明主从配置成功!
 
++ `Slave_IO_Running: Yes`
 
++ `Slave_SQL_Running: Yes`
 
-实现主从复制
+### 测试主从复制
 
 在主机执行以下sql,在从机中查看数据库、表和数据是否已经被同步
 
 ```bash
+# 创建db_user数据库
 CREATE DATABASE db_user;
+# 使用db_user数据库
 use db_user;
+# 创建测试表`test_table`
 CREATE TABLE `test_table` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `col1` varchar(255) DEFAULT NULL,
@@ -319,7 +332,7 @@ CREATE TABLE `test_table` (
   `col20` time DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB;
-
+# 创建测试数据
 INSERT INTO `test_table`(`id`, `col1`, `col2`, `col3`, `col4`, `col5`, `col6`, `col7`, `col8`, `col9`, `col10`, `col11`, `col12`, `col13`, `col14`, `col15`, `col16`, `col17`, `col18`, `col19`, `col20`) VALUES (1, 'value_1', 'data_1', 1, 0.01, '2024-06-27', '2024-06-27 01:45:53', '2024-06-27 01:45:53', 1, 'fd947ccb-3', 'texttexttexttexttexttexttexttexttexttext', 0xAB785C069FC049D130ECBECC0A3F106F2289B684ACFA01B0F58F862FB719F5E29DECC3E92EE6CF1F887DC94AF52A202012D3E6AE570F99948F3523813FD63D280D215646412BDE24DF33D9D57D1DEA7633D8B4449186CA615A6E2B9053AB55D839F378B3, 'mediumtextmediumtextmediumtextmediumtextmediumtextmediumtextmediumtextmediumtextmediumtextmediumtext', 'val1', 'val2', 1, 1000, 0.1, 0.001, 2024, '01:45:53');
 INSERT INTO `test_table`(`id`, `col1`, `col2`, `col3`, `col4`, `col5`, `col6`, `col7`, `col8`, `col9`, `col10`, `col11`, `col12`, `col13`, `col14`, `col15`, `col16`, `col17`, `col18`, `col19`, `col20`) VALUES (2, 'value_2', 'data_2', 2, 0.02, '2024-06-27', '2024-06-27 01:45:53', '2024-06-27 01:45:53', 0, 'fd94cad1-3', 'texttexttexttexttexttexttexttexttexttext', 0x68FB9C5B47F19164DA91B1EDE5ECC414612C73FA492A82D82E296FF2C0D86CB6F9A9496F4034FC273F70F040CF5D90FE2EA961EAA570191185F8DD18DC90C7DF70A1773989C96444BB18BDF2F50DC4F4F07661434CB84DADCBE0099EC0DCF0CD8F486D55, 'mediumtextmediumtextmediumtextmediumtextmediumtextmediumtextmediumtextmediumtextmediumtextmediumtext', 'val1', 'val2', 2, 2000, 0.2, 0.002, 2024, '01:45:53');
 INSERT INTO `test_table`(`id`, `col1`, `col2`, `col3`, `col4`, `col5`, `col6`, `col7`, `col8`, `col9`, `col10`, `col11`, `col12`, `col13`, `col14`, `col15`, `col16`, `col17`, `col18`, `col19`, `col20`) VALUES (3, 'value_3', 'data_3', 3, 0.03, '2024-06-27', '2024-06-27 01:45:53', '2024-06-27 01:45:53', 1, 'fd95013c-3', 'texttexttexttexttexttexttexttexttexttext', 0xD359EB7BF9899FA4EF309A69E0CAEBFBBB25BCEECADC73467D6754B372D9158577D07F1B99A5AEE671287A06B843E9A30892EA59DF329EC9AFF39CE3162E256B1B903382FE69B3413D8D7A38BC427D3ACDDC9EEFD0C0809A9DC4E3D1A9B3EF68B4910AC6, 'mediumtextmediumtextmediumtextmediumtextmediumtextmediumtextmediumtextmediumtextmediumtextmediumtext', 'val1', 'val2', 3, 3000, 0.3, 0.003, 2024, '01:45:53');
@@ -332,11 +345,22 @@ INSERT INTO `test_table`(`id`, `col1`, `col2`, `col3`, `col4`, `col5`, `col6`, `
 INSERT INTO `test_table`(`id`, `col1`, `col2`, `col3`, `col4`, `col5`, `col6`, `col7`, `col8`, `col9`, `col10`, `col11`, `col12`, `col13`, `col14`, `col15`, `col16`, `col17`, `col18`, `col19`, `col20`) VALUES (10, 'value_10', 'data_10', 10, 0.10, '2024-06-27', '2024-06-27 01:45:53', '2024-06-27 01:45:53', 0, 'fd991f5e-3', 'texttexttexttexttexttexttexttexttexttext', 0xD47CE11A6DCB74C4E32A45C09E864753DFB6BCC2EA583552DE677AF733C1573C991BE8EEDE37AC17F81F35247BF0A0E112EBE2A7DA2A4943B5A6ABF03AF1401529371E1346D3E9C4C62D0778DBB87A10AA5D8D181EB929B5AA507AED2F9EB56C79D45CEC, 'mediumtextmediumtextmediumtextmediumtextmediumtextmediumtextmediumtextmediumtextmediumtextmediumtext', 'val1', 'val2', 10, 10000, 1, 0.01, 2024, '01:45:53');
 ```
 
+## 问题汇总
 
+### 远程连接提示``Authentication plugin 'caching_sha2_password' cannot be loaded`, `
 
+修改mysql数据库用户登录加密规则
 
+```bash
+# 登录mysql
+mysql -u root -p
+# 修改加密规则
+ALTER USER 'root'@'%' IDENTIFIED WITH mysql_native_password BY 'root';
+# 刷新权限（可以直接复制）
+FLUSH PRIVILEGES;
+```
 
-## 常见问题
+### 启动主从同步后,`Slave_IO_Running: No`或者`Connecting`的情况
 
-### 启动主从同步后,常见错误是`Slave_IO_Running: No`或者`Connecting`的情况,此时下方的LAST_IO_ERROR错误日志,根据日志中的错误信息搜索解决方案.
+此时下方的LAST_IO_ERROR错误日志,根据日志中的错误信息搜索解决方案.
 

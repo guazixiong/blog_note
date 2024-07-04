@@ -467,14 +467,13 @@ ALTER USER 'root'@'localhost' IDENTIFIED BY 'password' PASSWORD EXPIRE NEVER;
 # 修改 MySQL 中 root 用户在 localhost 上的密码为 gpgg6bp3quhqhadbnhcw。
 ALTER USER 'root'@'localhost' IDENTIFIED BY 'gpgg6bp3quhqhadbnhcw';
 
-# 刷新权限（可以直接复制）
-FLUSH PRIVILEGES;
-
 # 添加远程登录用户jiyuan,密码jiyuan4zhong
 create user 'jiyuan'@'%' identified by 'jiyuan4zhong';
-
 # 授予该用户对所有数据库的所有权限
 GRANT ALL PRIVILEGES ON *.* TO 'jiyuan'@'%';
+
+# 刷新权限（可以直接复制）
+FLUSH PRIVILEGES;
 ```
 
 ## Docker-tomcat
