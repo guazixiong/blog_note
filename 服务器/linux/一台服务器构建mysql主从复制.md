@@ -181,7 +181,7 @@ mysql> show master status;
 
 执行以下命令
 
-`CHANGE MASTER TO MASTER_HOST='117.72.32.111',MASTER_USER='pd_slave',MASTER_PASSWORD='123456',MASTER_PORT=33061,MASTER_LOG_FILE='{file}',MASTER_LOG_POS={position};`  替换为自己的`file`和`position`
+`CHANGE MASTER TO MASTER_HOST='117.36.23.182',MASTER_USER='pd_slave',MASTER_PASSWORD='123456',MASTER_PORT=33061,MASTER_LOG_FILE='{file}',MASTER_LOG_POS={position};`  替换为自己的`file`和`position`
 
 ```bash
 root@ebe768e56fbf:/# mysql -u root -p
@@ -198,12 +198,12 @@ owners.
 
 Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
 
-mysql> CHANGE MASTER TO MASTER_HOST='117.72.32.111',MASTER_USER='pd_slave',MASTER_PASSWORD='123456',MASTER_PORT=33061,MASTER_LOG_FILE='binlog.000004',MASTER_LOG_POS=860;
+mysql> CHANGE MASTER TO MASTER_HOST='117.36.23.182',MASTER_USER='pd_slave',MASTER_PASSWORD='123456',MASTER_PORT=33061,MASTER_LOG_FILE='binlog.000004',MASTER_LOG_POS=860;
 Query OK, 0 rows affected, 9 warnings (0.10 sec)
 
 ```
 
-+ 设置主机地址:   `CHANGE MASTER TO MASTER_HOST='117.72.32.111'`
++ 设置主机地址:   `CHANGE MASTER TO MASTER_HOST='117.36.23.182'`
 + 设置主机访问用户账号: `MASTER_USER='pd_slave'`
 
 + 设置主机访问用户密码: `MASTER_PASSWORD='123456'`
@@ -224,7 +224,7 @@ Query OK, 0 rows affected, 1 warning (0.02 sec)
 mysql> SHOW SLAVE STATUS\G;
 *************************** 1. row ***************************
                Slave_IO_State: Waiting for source to send event
-                  Master_Host: 117.72.32.111
+                  Master_Host: 117.36.23.182
                   Master_User: pd_slave
                   Master_Port: 33061
                 Connect_Retry: 60
