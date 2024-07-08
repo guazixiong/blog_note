@@ -4,6 +4,9 @@ export default [
     title: "学习路线",
     collapsable: false,
     children: [
+      "git常用指令.md",
+      "一台服务器构建mysql主从复制.md",
+      "Centos 7 安装开发环境.md",
       "Mysql快速生成千万数据.md",
       "Java学习路线 by 程序员鱼皮.md",
       "前端学习路线 by 程序员鱼皮.md",
