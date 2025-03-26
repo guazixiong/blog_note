@@ -464,6 +464,38 @@ git branch -d Chapater8
 git push origin --delete Chapater6
 ```
 
+## Git 远程分支及提交时间排序
+
+以下是按提交时间从小到大排序的远程分支及其最后一次提交时间：
+
+```bash
+git for-each-ref --format '%(committerdate:iso8601) %(refname:short)' refs/remotes/ | sort
+```
+
+示例输出：
+
+```bash
+2025-03-23T08:30:12+08:00 origin/feature-xyz
+2025-03-24T10:30:12+08:00 origin/main
+2025-03-25T14:23:47+08:00 origin/another-branch  
+...
+```
+
+如果您希望按时间倒序排序，可以使用以下命令：
+
+```bash
+git for-each-ref --format '%(committerdate:iso8601) %(refname:short)' refs/remotes/ | sort -r
+```
+
+示例输出（倒序）：
+
+```bash
+2025-03-25T14:23:47+08:00 origin/another-branch
+2025-03-24T10:30:12+08:00 origin/main
+2025-03-23T08:30:12+08:00 origin/feature-xyz
+...
+```
+
 ## github主页图片不显示和访问慢的问题
 
 ### 解决步骤：
@@ -472,7 +504,7 @@ git push origin --delete Chapater6
 2. **访问**[IPAddress.com](https://www.ipaddress.com/)**，把报红线的url拷贝进去搜索IP地址。**
 3. **将地址写入本地host文件中(C:\Windows\System32\drivers\etc**)
 
-# git 如何撤销 commit、git commit 提交之后如何取消本次提交、如何更改提交的内容
+## git 如何撤销 commit、git commit 提交之后如何取消本次提交、如何更改提交的内容
 
 可以先用 git reflog 查看历史提交记录
 
